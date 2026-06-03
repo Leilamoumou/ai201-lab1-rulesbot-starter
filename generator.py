@@ -7,58 +7,36 @@ _client = Groq(api_key=GROQ_API_KEY)
 def generate_response(query, retrieved_chunks):
     """
     Generate a grounded answer from retrieved rule chunks.
-
-    TODO — Milestone 3:
-
-    `retrieved_chunks` is the list returned by retrieve(). Each item is a dict:
-      - "text"     : the chunk text
-      - "game"     : the game name
-      - "distance" : similarity score (you can use this to filter weak matches)
-
-    Before writing code, talk through these with your group:
-      - How will you format the chunks into a context block for the prompt?
-      - What instructions will stop the model from answering beyond what the
-        rules say? (Grounding is the whole point — a confident wrong answer
-        is worse than an honest "I don't know.")
-      - How will you surface which game each answer comes from?
-
-    Your response should:
-      1. Answer using only the retrieved context — not the model's general knowledge
-      2. Make clear which game the answer comes from
-      3. Say so clearly when the answer isn't in the loaded rules
-
-    Return the response as a plain string.
     """
     if not retrieved_chunks:
         return (
             "I couldn't find anything relevant in the loaded rule books. "
-            "Try rephrasing your question — or check that your ingestion pipeline is working."
+            "Try rephrasing your question or check that your ingestion pipeline is working."
         )
 
-    # Your implementation here.
-    context_block = "\n\n".join(
-    f"Source {i} ({chunk['game']}):\n{chunk['text']}"
-    for i, chunk in enumerate(retrieved_chunks, start=1)
-)
+    context_string = "Here are the rules you can use:\n\n"
+    for chunk in retrieved_chunks:
+        context_string += f"Game: {chunk['game']}\n"
+        context_string += f"Rule: {chunk['text']}\n"
+        context_string += "---\n"
 
-system_prompt = (
-    "You are a board game rules assistant titled RulesBot. Answer the question strictly "
-    "from the rulebook excerpts provided below, and from no other knowledge.\n"
-    "- Never rely on prior knowledge of how any board game is played. If a rule is not in "
-    "the excerpts, treat it as unknown.\n"
-    "- Name the game each rule belongs to so the user can see where the answer came from.\n"
-    "- If the excerpts don't contain the answer, reply only with: "
-    "'That rule isn't in the rulebooks I have loaded — try asking it a different way.'\n"
-    "- Keep answers short and literal. Don't add rules, numbers, or exceptions the excerpts don't state."
-)
+    system_instruction = (
+        "You are a rule bot that strictly follows rules for board games. Your job is to answer "
+        "questions on board games using ONLY the rule text provided below.\n\n"
+        "- When you provide an answer, you must cite the game it came from at the end of your response like this: [Source: Game Name].\n"
+        "- Do not draw on outside knowledge, your training data, or fill in gaps from what you know about board games.\n"
+        "- Do not guess, infer, or logically deduce rules that are not explicitly written in the text.\n"
+        "- If the answer is not contained in the provided text, you must reply with exactly: "
+        '"I do not have enough information to answer that." Do not add any other explanation.'
+    )
 
-messages = [
-    {"role": "system", "content": system_prompt},
-    {"role": "user", "content": f"Rulebook excerpts:\n{context_block}\n\nQuestion: {query}"},
-]
+    user_message = f"{context_string}\n\nQuestion: {query}"
 
-response = _client.chat.completions.create(
-    model=LLM_MODEL,
-    messages=messages,
-)
-return response.choices[0].message.content
+    response = _client.chat.completions.create(
+        model=LLM_MODEL,
+        messages=[
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": user_message}
+        ]
+    )
+    return response.choices[0].message.content
